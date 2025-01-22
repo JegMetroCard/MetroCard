@@ -1,0 +1,476 @@
+[manifest]
+version = "0.1.0"
+priority = 1
+
+#Add debuff = true to the return value when a scoring card triggers a joker to debuff that card from that point forward
+#Add silence_debuff = true to not actually apply the debuffed status to the card (it still won't score)
+[[patches]]
+[patches.pattern]
+target = "functions/state_events.lua"
+pattern = '''for j=1,#reps do
+    percent = percent + percent_delta
+    if reps[j] ~= 1 then
+        local _, eff = next(reps[j])
+        card_eval_status_text(eff.card, 'jokers', nil, nil, nil, eff)
+    end
+    
+    --calculate the hand effects
+    local effects = {eval_card(scoring_hand[i], {main_scoring = true, cardarea = G.play, full_hand = G.play.cards, scoring_hand = scoring_hand, scoring_name = text, poker_hands = poker_hands})}
+    SMODS.calculate_quantum_enhancements(scoring_hand[i], effects, {main_scoring = true, cardarea = G.play, full_hand = G.play.cards, scoring_hand = scoring_hand, scoring_name = text, poker_hands = poker_hands})
+    for k=1, #G.jokers.cards + #G.consumeables.cards do
+        local _card = G.jokers.cards[k] or G.consumeables.cards[k - #G.jokers.cards]
+        --calculate the joker individual card effects
+        local eval, post = eval_card(_card, {cardarea = G.play, full_hand = G.play.cards, scoring_hand = scoring_hand, scoring_name = text, poker_hands = poker_hands, other_card = scoring_hand[i], individual = true})
+        if next(eval) then 
+            table.insert(effects, eval)
+            if next(post) then 
+                for _, v in ipairs(post) do
+                    table.insert(effects, v) 
+                end
+            end
+            if eval.retriggers then
+                for rt = 1, #eval.retriggers do
+                    local rt_eval, rt_post = eval_card(_card, {cardarea = G.play, full_hand = G.play.cards, scoring_hand = scoring_hand, scoring_name = text, poker_hands = poker_hands, other_card = scoring_hand[i], individual = true, retrigger_joker = true})
+                    table.insert(effects, {eval.retriggers[rt]})
+                    table.insert(effects, rt_eval)
+                    if next(rt_post) then table.insert(effects, rt_post) end
+                end
+            end
+        end
+    end'''
+position = "at"
+payload = '''
+local got_debuffed = false
+for j=1,#reps do
+    percent = percent + percent_delta
+    if reps[j] ~= 1 then
+        local _, eff = next(reps[j])
+        card_eval_status_text(eff.card, 'jokers', nil, nil, nil, eff)
+    end
+    
+    --calculate the hand effects
+    local effects = {eval_card(scoring_hand[i], {main_scoring = true, cardarea = G.play, full_hand = G.play.cards, scoring_hand = scoring_hand, scoring_name = text, poker_hands = poker_hands})}
+    SMODS.calculate_quantum_enhancements(scoring_hand[i], effects, {main_scoring = true, cardarea = G.play, full_hand = G.play.cards, scoring_hand = scoring_hand, scoring_name = text, poker_hands = poker_hands})
+    for k=1, #G.jokers.cards + #G.consumeables.cards do
+        local _card = G.jokers.cards[k] or G.consumeables.cards[k - #G.jokers.cards]
+        --calculate the joker individual card effects
+        local eval, post = eval_card(_card, {cardarea = G.play, full_hand = G.play.cards, scoring_hand = scoring_hand, scoring_name = text, poker_hands = poker_hands, other_card = scoring_hand[i], individual = true, repetition_number = j, total_repetitions = #reps})
+        if next(eval) then
+            if eval.jokers.debuff then
+                if not eval.jokers.silence_debuff then scoring_hand[i].debuff = true end
+                got_debuffed = true
+                card_eval_status_text(scoring_hand[i], 'debuff')
+                effects = {}
+                break
+            end
+            table.insert(effects, eval)
+            if next(post) then 
+                for _, v in ipairs(post) do
+                    table.insert(effects, v) 
+                end
+            end
+            if eval.retriggers then
+                for rt = 1, #eval.retriggers do
+                    local rt_eval, rt_post = eval_card(_card, {cardarea = G.play, full_hand = G.play.cards, scoring_hand = scoring_hand, scoring_name = text, poker_hands = poker_hands, other_card = scoring_hand[i], individual = true, retrigger_joker = true})
+                    table.insert(effects, {eval.retriggers[rt]})
+                    table.insert(effects, rt_eval)
+                    if next(rt_post) then table.insert(effects, rt_post) end
+                end
+            end
+        end
+    end
+
+    if got_debuffed then break end
+'''
+match_indent = true
+times = 1
+
+#Enable floating face cards before drawing
+[[patches]]
+[patches.pattern]
+target = "functions/state_events.lua"
+pattern = '''for i=1, hand_space do --draw cards from deckL
+    if G.STATE == G.STATES.TAROT_PACK or G.STATE == G.STATES.SPECTRAL_PACK then 
+        draw_card(G.deck,G.hand, i*100/hand_space,'up', true)
+    else
+        draw_card(G.deck,G.hand, i*100/hand_space,'up', true)
+    end
+end'''
+position = "at"
+payload = '''
+local next_card_spot = #G.deck.cards
+for i=1, hand_space do --draw cards from deckL
+    if G.STATE == G.STATES.TAROT_PACK or G.STATE == G.STATES.SPECTRAL_PACK then
+        next_card_spot = float_card(next_card_spot)
+        draw_card(G.deck,G.hand, i*100/hand_space,'up', true)
+    else
+        next_card_spot = float_card(next_card_spot)
+        draw_card(G.deck,G.hand, i*100/hand_space,'up', true)
+    end
+end
+'''
+match_indent = true
+times = 1
+
+
+#Makes it so that boss blinds add "blind" as a source when debuffing a card
+[[patches]]
+[patches.pattern]
+target = "blind.lua"
+pattern = '''function Blind:debuff_card(card, from_blind)
+    local obj = self.config.blind
+    if not self.disabled and obj.recalc_debuff and type(obj.recalc_debuff) == 'function' then
+        if obj:recalc_debuff(card, from_blind) then 
+            card:set_debuff(true)
+            if card.debuff then card.debuffed_by_blind = true end
+        else
+            card:set_debuff(false)
+        end
+        return
+    elseif not self.disabled and obj.debuff_card and type(obj.debuff_card) == 'function' then
+        sendWarnMessage(("Blind object %s has debuff_card function, recalc_debuff is preferred"):format(obj.key), obj.set)
+        if obj:debuff_card(card, from_blind) then 
+            card:set_debuff(true)
+            if card.debuff then card.debuffed_by_blind = true end
+        else
+            card:set_debuff(false)
+        end
+        return
+    end
+    if self.debuff and not self.disabled and card.area ~= G.jokers then
+        if self.debuff.suit and card:is_suit(self.debuff.suit, true) then
+            card:set_debuff(true)
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+        if self.debuff.is_face =='face' and card:is_face(true) then
+            card:set_debuff(true)
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+        if self.name == 'The Pillar' and card.ability.played_this_ante then
+            card:set_debuff(true)
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+        if self.debuff.value and self.debuff.value == card.base.value then
+            card:set_debuff(true)
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+        if self.debuff.nominal and self.debuff.nominal == card.base.nominal then
+            card:set_debuff(true)
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+    end
+    if self.name == 'Crimson Heart' and not self.disabled and card.area == G.jokers then 
+        if card.ability.crimson_heart_chosen then
+            card:set_debuff(true);
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+    end
+    if self.name == 'Verdant Leaf' and not self.disabled and card.area ~= G.jokers then card:set_debuff(true); if card.debuff then card.debuffed_by_blind = true end; return end
+    card:set_debuff(false)
+end
+'''
+position = "at"
+payload = '''function Blind:debuff_card(card, from_blind)
+    local obj = self.config.blind
+    if not self.disabled and obj.recalc_debuff and type(obj.recalc_debuff) == 'function' then
+        if obj:recalc_debuff(card, from_blind) then 
+            SMODS.debuff_card(card, true, 'blind')
+            if card.debuff then card.debuffed_by_blind = true end
+        else
+            SMODS.debuff_card(card, false, 'blind')
+        end
+        return
+    elseif not self.disabled and obj.debuff_card and type(obj.debuff_card) == 'function' then
+        sendWarnMessage(("Blind object %s has debuff_card function, recalc_debuff is preferred"):format(obj.key), obj.set)
+        if obj:debuff_card(card, from_blind) then 
+            SMODS.debuff_card(card, true, 'blind')
+            if card.debuff then card.debuffed_by_blind = true end
+        else
+            SMODS.debuff_card(card, false, 'blind')
+        end
+        return
+    end
+    if self.debuff and not self.disabled and card.area ~= G.jokers then
+        if self.debuff.suit and card:is_suit(self.debuff.suit, true) then
+            SMODS.debuff_card(card, true, 'blind')
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+        if self.debuff.is_face =='face' and card:is_face(true) then
+            SMODS.debuff_card(card, true, 'blind')
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+        if self.name == 'The Pillar' and card.ability.played_this_ante then
+            SMODS.debuff_card(card, true, 'blind')
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+        if self.debuff.value and self.debuff.value == card.base.value then
+            SMODS.debuff_card(card, true, 'blind')
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+        if self.debuff.nominal and self.debuff.nominal == card.base.nominal then
+            SMODS.debuff_card(card, true, 'blind')
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+    end
+    if self.name == 'Crimson Heart' and not self.disabled and card.area == G.jokers then 
+        if card.ability.crimson_heart_chosen then
+            SMODS.debuff_card(card, true, 'blind')
+            if card.debuff then card.debuffed_by_blind = true end
+            return
+        end
+    end
+    if self.name == 'Verdant Leaf' and not self.disabled and card.area ~= G.jokers then SMODS.debuff_card(card, true, 'blind'); if card.debuff then card.debuffed_by_blind = true end; return end
+    SMODS.debuff_card(card, false, 'blind')
+end
+'''
+match_indent = true
+times = 1
+
+
+#Create graveyard
+[[patches]]
+[patches.pattern]
+target = "game.lua"
+pattern = '''self.play = CardArea(
+    0, 0,
+    CAI.play_W,CAI.play_H, 
+    {card_limit = 5, type = 'play'})'''
+position = "after"
+payload = '''
+self.graveyard = CardArea(
+        0, 0,
+        CAI.discard_W,CAI.discard_H,
+        {card_limit = 500, type = 'graveyard'})
+self.graveyard.states.visible = false
+'''
+match_indent = true
+times = 1
+
+#Make sure cards in graveyard aren't saved as part of the deck
+[[patches]]
+[patches.pattern]
+target = "game.lua"
+pattern = '''for k, v in pairs(G.I.CARD) do
+    if v.playing_card then
+        table.insert(G.playing_cards, v)
+    end
+end'''
+position = "at"
+payload = '''
+for k, v in pairs(G.I.CARD) do
+    if v.playing_card and (not v.area or v.area ~= G.graveyard)then
+        table.insert(G.playing_cards, v)
+    end
+end
+'''
+match_indent = true
+times = 1
+
+
+
+#start_dissolve
+[[patches]]
+[patches.pattern]
+target = "card.lua"
+pattern = '''G.E_MANAGER:add_event(Event({
+    trigger = 'after',
+    blockable = false,
+    delay =  1.05*dissolve_time,
+    func = (function() self:remove() return true end)
+}))'''
+position = "at"
+payload = '''G.E_MANAGER:add_event(Event({
+    trigger = 'after',
+    blockable = false,
+    delay =  1.05*dissolve_time,
+    func = (function()
+            if G.hand and self.area == G.hand and not self.ability.temporary then
+                G.hand:remove_card(self)
+                G.graveyard:emplace(self)
+                self:remove_from_deck()
+
+                if G.playing_cards then
+                    for k, v in ipairs(G.playing_cards) do
+                        if v == self then
+                            table.remove(G.playing_cards, k)
+                            break
+                        end
+                    end
+                    for k, v in ipairs(G.playing_cards) do
+                        v.playing_card = k
+                    end
+                end
+            else
+                self:remove()
+            end
+            return true
+        end)
+}))'''
+match_indent = true
+times = 1
+
+#Temporary cards get removed instead of going into discard
+[[patches]]
+[patches.pattern]
+target = "cardarea.lua"
+pattern = '''if location == 'front' or self.config.type == 'deck' then 
+    table.insert(self.cards, 1, card)'''
+position = "at"
+payload = '''
+if self.config.type == 'discard' and card.ability.temporary then
+    card:remove()
+elseif location == 'front' or self.config.type == 'deck' then 
+    table.insert(self.cards, 1, card)
+'''
+match_indent = true
+times = 1
+
+#Protanopia Gold
+[[patches]]
+[patches.regex]
+target = "card.lua"
+pattern = "(?<beginning>.*)self.seal == 'Gold'(?<end>.*)"
+position = "at"
+line_prepend = "$beginning"
+payload = "(self.seal == 'Gold' or (#SMODS.find_card('j_metro_protanopia') > 0 and self.seal == 'Red'))$end"
+times = 4
+
+#Protanopia Red
+[[patches]]
+[patches.pattern]
+target = "card.lua"
+pattern = "if self.seal == 'Red' then"
+position = "at"
+payload = "if (self.seal == 'Red' or (#SMODS.find_card('j_metro_protanopia') > 0 and self.seal == 'Gold')) then"
+match_indent = true
+times = 1
+
+#Protanopia Blue
+[[patches]]
+[patches.pattern]
+target = "card.lua"
+pattern = "if self.seal == 'Blue' and #G.consumeables.cards + G.GAME.consumeable_buffer < G.consumeables.config.card_limit and not self.ability.extra_enhancement then"
+position = "at"
+payload = "if (self.seal == 'Blue' or (#SMODS.find_card('j_metro_protanopia') > 0 and self.seal == 'Purple')) and #G.consumeables.cards + G.GAME.consumeable_buffer < G.consumeables.config.card_limit and not self.ability.extra_enhancement then"
+match_indent = true
+times = 1
+
+#Protanopia Purple
+[[patches]]
+[patches.pattern]
+target = "card.lua"
+pattern = "if self.seal == 'Purple' and #G.consumeables.cards + G.GAME.consumeable_buffer < G.consumeables.config.card_limit then"
+position = "at"
+payload = "if (self.seal == 'Purple' or (#SMODS.find_card('j_metro_protanopia') > 0 and self.seal == 'Blue')) and #G.consumeables.cards + G.GAME.consumeable_buffer < G.consumeables.config.card_limit then"
+match_indent = true
+times = 1
+
+
+#Add load cash button to metro card
+[[patches]]
+[patches.pattern]
+target = "functions/UI_definitions.lua"
+pattern = '''if card.area and card.area.config.type == 'joker' then'''
+position = "after"
+payload = ''' 
+if card.ability.name == 'j_metro_card' then
+    use = {n=G.UIT.C, config={align = "cr"}, nodes={
+        {n=G.UIT.C, config={ref_table = card, align = "cr",padding = 0.1, r=0.08, minw = 1.25, hover = true, shadow = true, colour = G.C.UI.BACKGROUND_INACTIVE, one_press = false, button = 'load_metro_card', func = 'can_load_metro_card'}, nodes={
+            {n=G.UIT.B, config = {w=0.1,h=0.6}},
+            {n=G.UIT.C, config={align = "tm"}, nodes={
+                {n=G.UIT.R, config={align = "cm", maxw = 1.25}, nodes={
+                    {n=G.UIT.T, config={text = 'Load',colour = G.C.UI.TEXT_LIGHT, scale = 0.4, shadow = true}}
+                }},
+                {n=G.UIT.R, config={align = "cm"}, nodes={
+                    {n=G.UIT.T, config={text = localize('$'),colour = G.C.WHITE, scale = 0.4, shadow = true}},
+                    {n=G.UIT.T, config={text = card.ability.extra.cash_increment,colour = G.C.WHITE, scale = 0.55, shadow = true}}
+                }}
+            }}
+        }},
+        }}
+end
+'''
+match_indent = true
+times = 1
+
+#Mistigris Flush
+[[patches]]
+[patches.pattern]
+target = "functions/misc_functions.lua"
+pattern = "if hand[i]:is_suit(suit, nil, true) then flush_count = flush_count + 1;  t[#t+1] = hand[i] end"
+position = "at"
+payload = "if ( hand[i]:is_suit(suit, nil, true) or #SMODS.find_card('j_metro_mistigris') > 0  and hand[i]:get_id() == 11) then flush_count = flush_count + 1;  t[#t+1] = hand[i] end "
+match_indent = true
+times = 1
+
+#Mistigris X of a kind
+[[patches]]
+[patches.pattern]
+target = "functions/misc_functions.lua"
+pattern = '''function get_X_same(num, hand, or_more)
+  local vals = {}
+  for i = 1, SMODS.Rank.max_id.value do
+      vals[i] = {}
+  end
+  for i=#hand, 1, -1 do
+    local curr = {}
+    table.insert(curr, hand[i])
+    for j=1, #hand do
+      if hand[i]:get_id() == hand[j]:get_id() and i ~= j then
+        table.insert(curr, hand[j])
+      end
+    end
+    if or_more and (#curr >= num) or (#curr == num) then
+      vals[curr[1]:get_id()] = curr
+    end
+  end
+  local ret = {}
+  for i=#vals, 1, -1 do
+    if next(vals[i]) then table.insert(ret, vals[i]) end
+  end
+  return ret
+end'''
+position = "at"
+payload = '''
+function get_X_same(num, hand, or_more)
+  local mistigris = next(SMODS.find_card('j_metro_mistigris'))
+  local vals = {}
+  for i = 1, SMODS.Rank.max_id.value do
+      vals[i] = {}
+  end
+  for i=#hand, 1, -1 do
+    local usable_jack_threshold = 0
+    local curr = {}
+    table.insert(curr, hand[i])
+    for j=1, #hand do
+      if (hand[i]:get_id() == hand[j]:get_id() or mistigris and hand[j]:get_id() == 11 and j > usable_jack_threshold) and i ~= j then
+        table.insert(curr, hand[j])
+        if hand[j]:get_id() == 11 then
+            usable_jack_threshold = j
+        end
+      end
+    end
+    if or_more and (#curr >= num) or (#curr == num) then
+      vals[curr[1]:get_id()] = curr
+    end
+  end
+  local ret = {}
+  for i=#vals, 1, -1 do
+    if next(vals[i]) then table.insert(ret, vals[i]) end
+  end
+  return ret
+end
+'''
+match_indent = true
+times = 1
