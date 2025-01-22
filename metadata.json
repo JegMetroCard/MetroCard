@@ -1,0 +1,14 @@
+{
+	"id": "metro_card",
+	"name": "Metro Card",
+	"display_name": "Metro Card",
+	"author": ["Jeg"],
+	"description": "Adds some jokers",
+	"prefix": "metro",
+	"main_file": "MetroCard.lua",
+	"priority": 0,
+	"badge_colour": "fcba03",
+	"badge_text_colour": "FFFFFF",
+	"version": "0.0.1",
+	"dependencies": ["Steamodded (>=1.0.0~ALPHA-1313a)"]
+}
