@@ -1,4 +1,4 @@
-# MetroCard
+# Metro Card
 A mod for Balatro that adds some jokers, with an emphasis on matching the vibe of the original game and creating more jokers with unique/non-scoring-related effects.
 
 ## Current Jokers
