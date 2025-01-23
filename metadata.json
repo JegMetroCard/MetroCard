@@ -9,6 +9,6 @@
 	"priority": 0,
 	"badge_colour": "fcba03",
 	"badge_text_colour": "FFFFFF",
-	"version": "0.0.1",
+	"version": "1.0.0",
 	"dependencies": ["Steamodded (>=1.0.0~ALPHA-1313a)"]
 }
