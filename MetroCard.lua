@@ -715,16 +715,20 @@ SMODS.PokerHands['Full House'].evaluate = function(parts)
     if #parts._3 < 1 or #parts._2 < 2 then return {} end
 
     --Make sure the same card isn't being counted for multiple parts in the full house
-    --This looks monstrous, but under normal circumstances we only expect 6 loops here
+    local any_non_matching = false
     for k3, v3 in ipairs(parts._3) do
         for k2, v2 in ipairs(parts._2) do
+            local matches = false
             for x = 1, #v3 do
                 for y = 1, #v2 do
-                    if v3[x] == v2[y] then return {} end
+                    if v3[x] == v2[y] then matches = true end
                 end
             end
+            any_non_matching = ( not matches ) or any_non_matching
         end
     end
+
+    if not any_non_matching then return {} end
 
     return parts._all_pairs
 end
