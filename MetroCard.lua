@@ -212,6 +212,10 @@ stoplight_calculate = function(self, card, context)
     local stoplight_keys = {"j_metro_green_light", "j_metro_yellow_light", "j_metro_red_light"}
 
     if context.cardarea == G.play and context.repetition and card.ability.extra.current_light == 2 then
+        --If the card that turned us yellow is now asking for repetitions on the same rep it turned us, ignore
+        if context.other_card == card.ability.extra.triggering_card and context.repetition_number == card.ability.extra.triggering_rep then return {} end
+        card.ability.extra.triggering_card = nil
+        card.ability.extra.triggering_rep = nil
         card.ability.extra.sped_card = context.other_card
         return {
             message = "Floor it!",
@@ -229,16 +233,23 @@ stoplight_calculate = function(self, card, context)
             return {}
         end
 
+        if card.ability.extra.current_light == 1 then
+            card.ability.extra.triggering_card = context.other_card
+            card.ability.extra.triggering_rep = context.repetition_number
+        end
+
         local next_key = (card.ability.extra.current_light % 3) + 1
 
         local should_apply_debuff = card.ability.extra.current_light == 3
+
+        local other_card = context.other_card
 
         G.E_MANAGER:add_event(Event({
             func = function()
                 transform_joker(card, stoplight_keys[next_key])
                 card:juice_up()
                 -- Visually debuff card once red light becomes red light
-                if (should_apply_debuff) then context.other_card.debuff = true end
+                if (should_apply_debuff) then other_card.debuff = true end
                 return true
             end
         }))
@@ -425,6 +436,84 @@ SMODS.Joker {
         return false, {}
     end
 }
+
+--Override SMODS.score_card for stoplight effects
+SMODS.score_card = function(card, context)
+    local reps = { 1 }
+    local j = 1
+    while j <= #reps do
+        if reps[j] ~= 1 then
+            local _, eff = next(reps[j])
+            SMODS.calculate_effect(eff, eff.card)
+            percent = percent + percent_delta
+        end
+
+        context.main_scoring = true
+        local effects = { eval_card(card, context) }
+        SMODS.calculate_quantum_enhancements(card, effects, context)
+        context.main_scoring = nil
+        context.individual = true
+        context.other_card = card
+
+        context.repetition_number = j
+        context.total_repetitions = #reps
+
+        local got_debuffed = false
+        if next(effects) then
+            for _, area in ipairs(SMODS.get_card_areas('jokers')) do
+                for _, _card in ipairs(area.cards) do
+                    --calculate the joker individual card effects
+                    local eval, post = eval_card(_card, context)
+
+                    if eval.jokers and eval.jokers.debuff then
+                        if not eval.jokers.silence_debuff then scoring_hand[i].debuff = true end
+                        got_debuffed = true
+                        card_eval_status_text(card, 'debuff')
+                        effects = {}
+                        break
+                    end
+
+                    if next(eval) then
+                        eval.juice_card = eval.card
+                        table.insert(effects, eval)
+                        for _, v in ipairs(post) do effects[#effects+1] = v end
+                        if eval.retriggers then
+                            context.retrigger_joker = true
+                            for rt = 1, #eval.retriggers do
+                                local rt_eval, rt_post = eval_card(_card, context)
+                                table.insert(effects, { eval.retriggers[rt] })
+                                table.insert(effects, rt_eval)
+                                for _, v in ipairs(rt_post) do effects[#effects+1] = v end
+                            end
+                            context.retrigger_joker = nil
+                        end
+                    end
+                end
+            end
+        end
+
+        if got_debuffed then break end
+
+        SMODS.trigger_effects(effects, card)
+        local deck_effect = G.GAME.selected_back:trigger_effect(context)
+        if deck_effect then SMODS.calculate_effect(deck_effect, G.deck.cards[1] or G.deck) end
+
+        context.individual = nil
+        if reps[j] == 1 and effects.calculated then
+            context.repetition = true
+            context.card_effects = effects
+            SMODS.calculate_repetitions(card, context, reps)
+            context.repetition = nil
+            context.card_effects = nil
+        end
+        j = j + (effects.calculated and 1 or #reps)
+        context.other_card = nil
+        card.lucky_trigger = nil
+        context.repetition_number = nil
+        context.total_repetitions = nil
+    end
+    card.extra_enhancements = nil
+end
 
 --Metro Card
 SMODS.Joker {

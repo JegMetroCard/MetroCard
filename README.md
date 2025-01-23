@@ -24,4 +24,4 @@ A mod for Balatro that adds some jokers, with an emphasis on matching the vibe o
 **Mistigris**: Jacks count as any card for making poker hands.
 
 ## Requirements
-Steamodded version 1.0.0~ALPHA-1313a or greater.
+Steamodded version 1.0.0~ALPHA-1323b or greater.
