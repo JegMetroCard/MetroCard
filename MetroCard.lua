@@ -804,20 +804,148 @@ SMODS.PokerHands['Full House'].evaluate = function(parts)
     if #parts._3 < 1 or #parts._2 < 2 then return {} end
 
     --Make sure the same card isn't being counted for multiple parts in the full house
-    local any_non_matching = false
+    local requisite_non_matching = false
     for k3, v3 in ipairs(parts._3) do
         for k2, v2 in ipairs(parts._2) do
-            local matches = false
-            for x = 1, #v3 do
-                for y = 1, #v2 do
-                    if v3[x] == v2[y] then matches = true end
+            local unmatched_cards = 0
+            for y = 1, #v2 do
+                local no_match = true
+                for x = 1, #v3 do
+                    if v3[x] == v2[y] then no_match = false end
                 end
+                if no_match then unmatched_cards = unmatched_cards + 1 end
             end
-            any_non_matching = ( not matches ) or any_non_matching
+            requisite_non_matching = ( unmatched_cards >= 2 ) or requisite_non_matching
         end
     end
 
-    if not any_non_matching then return {} end
+    if not requisite_non_matching then return {} end
 
     return parts._all_pairs
 end
+
+get_first_hand = function(hand_name, size)
+    size = size or 5
+    local parts = {}
+	for _, v in ipairs(SMODS.PokerHandPart.obj_buffer) do
+		parts[v] = SMODS.PokerHandParts[v].func(G.deck.cards) or {}
+	end
+    local hand_data = SMODS.PokerHands[hand_name].evaluate(parts)
+
+    hand_data = hand_data or {}
+
+    -- Shuffle parts so we don't always get the highest one
+    pseudoshuffle(hand_data, 783740073720)
+
+    local big_list = SMODS.merge_lists(hand_data)
+
+    for i = 1, #big_list - size + 1 do
+        local cards = {}
+        for j = 0, size - 1 do
+            cards[#cards + 1] = big_list[i + j]
+        end
+        local new_parts = {}
+        for _, v in ipairs(SMODS.PokerHandPart.obj_buffer) do
+            new_parts[v] = SMODS.PokerHandParts[v].func(cards) or {}
+        end
+        local new_hand = SMODS.merge_lists(SMODS.PokerHands[hand_name].evaluate(new_parts))
+
+        if #new_hand > 0 then return new_hand end
+    end
+
+    return {}
+end
+
+one_two_punch_hands = {"High Card", "Pair", "Three of a Kind", "Four of a Kind", "Five of a Kind"}
+
+--One-Two Punch
+SMODS.Joker {
+    key = "one_two_punch",
+    config = {
+        extra = {
+            current_req_hand = 1,
+            card_queue = {}
+        }
+    },
+    loc_txt = {
+        name = 'One-Two Punch',
+        text = { 'If {C:attention}first{} played hand', 'in round is a ', '{C:green}#1#{},', 'draw a {C:green}#2#{}', 'Then move to next hand', '{C:inactive}(Resets if first hand{}', '{C:inactive}is not required hand){}'},
+    },
+    rarity = 1,
+    pos = { x = 0, y = 1 },
+    atlas = "metro_jokers",
+    cost = 4,
+    unlocked = true,
+    discovered = true,
+    blueprint_compat = false,
+    eternal_compat = true,
+    soul_pos = nil,
+
+    loc_vars = function(self, info_queue, card)
+        return {
+          vars = {
+            one_two_punch_hands[card.ability.extra.current_req_hand],
+            one_two_punch_hands[( card.ability.extra.current_req_hand + 1 <= #one_two_punch_hands and G.GAME.hands[one_two_punch_hands[card.ability.extra.current_req_hand + 1]].visible) and card.ability.extra.current_req_hand + 1 or card.ability.extra.current_req_hand]
+          }
+        }
+    end,
+
+    calculate = function(self, card, context)
+        if context.blueprint then return end
+
+
+        if context.final_scoring_step and G.GAME.current_round and G.GAME.current_round.hands_played == 0 then
+            if G.GAME.last_hand_played == one_two_punch_hands[card.ability.extra.current_req_hand] then
+                card.ability.extra.current_req_hand = ( card.ability.extra.current_req_hand + 1 <= #one_two_punch_hands and G.GAME.hands[one_two_punch_hands[card.ability.extra.current_req_hand + 1]].visible) and card.ability.extra.current_req_hand + 1 or card.ability.extra.current_req_hand
+                if #context.full_hand >= card.ability.extra.current_req_hand then
+                    card.ability.extra.card_queue = get_first_hand(one_two_punch_hands[card.ability.extra.current_req_hand], card.ability.extra.current_req_hand)
+                end
+            else
+                if card.ability.extra.current_req_hand > 1 then
+                    G.E_MANAGER:add_event(Event({
+                        func = function()
+                            play_sound('other1')
+                            attention_text({
+                                text = 'Reset!',
+                                scale = 1, 
+                                hold = 0.2,
+                                backdrop_colour = G.C.White,
+                                align = 'bm',
+                                major = card,
+                                offset = {x = 0, y = 0.05*card.T.h}
+                            })
+                            card:juice_up()
+                            return true
+                        end,
+                        blocking = false
+                    }))
+                end
+                card.ability.extra.current_req_hand = 1
+            end
+        end
+
+        if context.drawing_cards and context.floating_card and G.GAME.current_round and G.GAME.current_round.hands_played == 1 then
+            if #card.ability.extra.card_queue < 1 then return {card = card, should_float = false} end
+            return {
+                card = card,
+                should_float = true,
+                func = function(candidate)
+                    if card.ability.extra.card_queue[1] == candidate then
+                        table.remove(card.ability.extra.card_queue, 1)
+                        return true 
+                    end
+                    return false
+                end
+            }
+        end
+
+        if context.floated_card then
+            local index = 0
+            return {card = card}
+        end
+
+        if context.hand_drawn then
+            card.ability.extra.card_queue = {}
+        end
+    end
+}
