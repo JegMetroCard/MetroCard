@@ -869,7 +869,7 @@ SMODS.Joker {
     },
     loc_txt = {
         name = 'One-Two Punch',
-        text = { 'If {C:attention}first{} played hand', 'in round is a ', '{C:green}#1#{},', 'draw a {C:green}#2#{}', 'Then move to next hand', '{C:inactive}(Resets if first hand{}', '{C:inactive}is not required hand){}'},
+        text = { 'If {C:attention}first{} played hand in blind', 'is a {C:green}#1#{},', 'draw a {C:green}#2#{}', 'Next first hand must be a', 'a {C:green}#2#{}', '{C:inactive}(Resets if combo is broken){}'},
     },
     rarity = 1,
     pos = { x = 0, y = 1 },
