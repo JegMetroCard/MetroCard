@@ -824,6 +824,31 @@ SMODS.PokerHands['Full House'].evaluate = function(parts)
     return parts._all_pairs
 end
 
+--Same thing here
+SMODS.PokerHands['Flush House'].evaluate = function(parts)
+    if #parts._3 < 1 or #parts._2 < 2 or not next(parts._flush) then return {} end
+
+    --Make sure the same card isn't being counted for multiple parts in the full house
+    local requisite_non_matching = false
+    for k3, v3 in ipairs(parts._3) do
+        for k2, v2 in ipairs(parts._2) do
+            local unmatched_cards = 0
+            for y = 1, #v2 do
+                local no_match = true
+                for x = 1, #v3 do
+                    if v3[x] == v2[y] then no_match = false end
+                end
+                if no_match then unmatched_cards = unmatched_cards + 1 end
+            end
+            requisite_non_matching = ( unmatched_cards >= 2 ) or requisite_non_matching
+        end
+    end
+
+    if not requisite_non_matching then return {} end
+
+    return { SMODS.merge_lists(parts._all_pairs, parts._flush) }
+end
+
 get_first_hand = function(hand_name, size)
     size = size or 5
     local parts = {}
