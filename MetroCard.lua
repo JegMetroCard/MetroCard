@@ -163,17 +163,17 @@ SMODS.Joker {
     key = "grim_reaper",
     config = {
         extra = {
-            resurrect_count = 5
+            xmult = 3
         }
     },
     loc_txt = {
         name = 'Grim Reaper',
-        text = { 'When blind is selected', 'remove #1# cards', 'from {C:inactive}Graveyard{}', 'and add them to hand', 'They are {C:dark_edition}Negative{}'},
+        text = { 'Played {C:attention}face cards{}', 'give {X:mult,C:white}x#1#{} Mult', 'then are {C:attention}destroyed{}'},
     },
-    rarity = 2,
+    rarity = 3,
     pos = { x = 6, y = 0 },
     atlas = "metro_jokers",
-    cost = 6,
+    cost = 7,
     unlocked = true,
     discovered = true,
     blueprint_compat = true,
@@ -181,26 +181,35 @@ SMODS.Joker {
     soul_pos = nil,
 
     loc_vars = function(self, info_queue, card)
-        info_queue[#info_queue+1] = {key = 'o_graveyard', set = 'Other'}
-        info_queue[#info_queue+1] = {key = 'e_negative_card', set = 'Edition', config = {extra = 1}}
         return {
           vars = {
-            card.ability.extra.resurrect_count
+            card.ability.extra.xmult
           }
         }
     end,
 
     calculate = function(self, card, context)
-        if card.debuff then return end
-        local copied = 0
-        if context.first_hand_drawn == true then
-            for i = 1, card.ability.extra.resurrect_count do
-                resurrect_card()
-            end
+        if context.individual and context.cardarea == G.play and context.other_card:is_face() then
+            return {
+                card = card,
+                xmult = card.ability.extra.xmult
+            }
         end
-    end
 
-    
+        if context.destroy_card and context.cardarea == G.play and context.destroying_card:is_face() then
+            return { 
+                card = card,
+                message = "Reaped!",
+                sound = "slice1",
+                colour = G.C.inactive,
+                remove = true
+            }
+        end
+    end,
+
+    in_pool = function(self, args)
+        return G.GAME.mr_bones_extinct == true, {}
+    end
 }
 
 --Traffic Lights
@@ -971,6 +980,61 @@ SMODS.Joker {
 
         if context.hand_drawn then
             card.ability.extra.card_queue = {}
+        end
+    end
+}
+
+--Desperado
+SMODS.Joker {
+    key = "desperado",
+    config = {
+        extra = {
+            sell_value_scalar = 3
+        }
+    },
+    loc_txt = {
+        name = 'Desperado',
+        text = {'Gains {C:money}$#1#{} of sell value', 'whenever a played card {C:attention}scores{}', 'Resets at {C:attention}end of round{}'},
+    },
+    rarity = 1,
+    pos = { x = 0, y = 0 },
+    atlas = "metro_jokers",
+    cost = 4,
+    unlocked = true,
+    discovered = true,
+    blueprint_compat = false,
+    eternal_compat = true,
+    soul_pos = nil,
+
+    loc_vars = function(self, info_queue, card)
+        return {
+          vars = {
+            card.ability.extra.sell_value_scalar
+          }
+        }
+    end,
+
+    calculate = function(self, card, context)
+        if context.blueprint then return end
+        if context.individual and context.cardarea == G.play then
+            card.ability.extra_value = card.ability.extra_value + card.ability.extra.sell_value_scalar
+            card:set_cost()
+            return {
+                message = localize('k_val_up'),
+                message_card = card,
+                colour = G.C.MONEY,
+                card = card
+            }
+        end
+
+        if context.end_of_round and context.cardarea == G.jokers then
+            card.ability.extra_value = 0
+            card:set_cost()
+            return {
+                message = localize('k_reset'),
+                colour = G.C.RED,
+                card = card
+            }
         end
     end
 }

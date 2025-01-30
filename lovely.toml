@@ -293,6 +293,19 @@ payload = "if (self.seal == 'Purple' or (#SMODS.find_card('j_metro_protanopia') 
 match_indent = true
 times = 1
 
+#Mr Bones Trigger
+[[patches]]
+[patches.pattern]
+target = "card.lua"
+pattern = '''if self.ability.name == 'Mr. Bones' and context.game_over and 
+G.GAME.chips/G.GAME.blind.chips >= 0.25 then'''
+position = "after"
+payload = "    G.GAME.mr_bones_extinct = true"
+match_indent = true
+times = 1
+
+
+
 
 #Add load cash button to metro card
 [[patches]]
